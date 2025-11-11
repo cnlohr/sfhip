@@ -72,6 +72,32 @@ IF YOU ENABLE SFHIP_DHCP_CLIENT
   SFHIP will call this whenever an IP is leased.
   void sfhip_got_dhcp_lease( sfhip * hip, sfhip_address addr );
 
+IF YOU WANT TO RECEIVE/SEND UDP SOCKETS
+
+  #define SFHIP_UDP_USER_HANDLER example_udp_user_handler
+
+  where example_udp_user_handler is
+
+    int example_udp_user_handler(
+      sfhip * hip,
+      sfhip_phy_packet_mtu * pkt,
+      uint8_t * payload,
+      int ulen,
+      int source_port,
+      int destination_port );
+
+   RETURN VALUE is 0 for no packet sent or 1 for packet sent.
+
+     sfhip_mac_header * mac = &pkt->mac_header;
+     sfhip_ip_header  * ip = (sfhip_ip_header *)(mac + 1 );
+     int plen = ####
+     payload[0] = 'X';
+     payload[1] = '\n';
+     sfhip_make_udp_packet( hip, pkt, mac->source, ip->source_address,
+         destination_port, source_port );
+     sfhip_send_udp_packet( hip, pkt, plen );
+     return 1;
+
 IF YOU HAVE SFHIP_TCP_SOCKETS you must implement:
 
   A function to accept or reject connections. This will be called and you must
@@ -155,6 +181,8 @@ hipbe32 remote_host );
 	#define SFHIP_WARN( x... )
 #endif
 
+// #define SFHIP_UDP_USER_HANDLER (function name)
+
 ///////////////////////////////////////////////////////////////////////////////
 // Internal
 
@@ -179,14 +207,14 @@ typedef uint32_t hipbe32;
 	#endif
 typedef uint16_t __hipbitwise hipbe16;
 typedef uint32_t __hipbitwise hipbe32;
-	#define HIPHTONS( x ) ( ( ( (x)&0xff ) << 8 ) | ( ( x ) >> 8 ) )
-	#define HIPHTONL( x )                                                                \
-		( ( ( (x)&0xff ) << 24 ) | ( ( (x)&0xff00 ) << 8 ) | ( ( (x)&0xff0000 ) >> 8 ) | \
-		  ( ( (x)&0xff000000 ) >> 24 ) )
-	#define HIPNTOHS( x ) ( ( ( (x)&0xff ) << 8 ) | ( ( x ) >> 8 ) )
-	#define HIPNTOHL( x )                                                                \
-		( ( ( (x)&0xff ) << 24 ) | ( ( (x)&0xff00 ) << 8 ) | ( ( (x)&0xff0000 ) >> 8 ) | \
-		  ( ( (x)&0xff000000 ) >> 24 ) )
+	#define HIPHTONS( x ) ( ( ( ( x ) & 0xff ) << 8 ) | ( ( x ) >> 8 ) )
+	#define HIPHTONL( x )                                                                            \
+		( ( ( ( x ) & 0xff ) << 24 ) | ( ( ( x ) & 0xff00 ) << 8 ) | ( ( ( x ) & 0xff0000 ) >> 8 ) | \
+		  ( ( ( x ) & 0xff000000 ) >> 24 ) )
+	#define HIPNTOHS( x ) ( ( ( ( x ) & 0xff ) << 8 ) | ( ( x ) >> 8 ) )
+	#define HIPNTOHL( x )                                                                            \
+		( ( ( ( x ) & 0xff ) << 24 ) | ( ( ( x ) & 0xff00 ) << 8 ) | ( ( ( x ) & 0xff0000 ) >> 8 ) | \
+		  ( ( ( x ) & 0xff000000 ) >> 24 ) )
 #endif
 
 #define HIPALIGN16 __attribute__( ( aligned( 2 ) ) )
@@ -234,9 +262,15 @@ typedef int sfhip_length_or_tcp_code;
 ///////////////////////////////////////////////////////////////////////////////
 
 // For fixed IPs, this compiles to a constant number.
-#define HIPIP( a, b, c, d )                                                            \
-	HIPHTONL( ( ( (d)&0xff ) << 0 ) | ( ( (c)&0xff ) << 8 ) | ( ( (b)&0xff ) << 16 ) | \
-	          ( ( (a)&0xff ) << 24 ) )
+#define HIPIP( a, b, c, d )                                                                        \
+	HIPHTONL( ( ( ( d ) & 0xff ) << 0 ) | ( ( ( c ) & 0xff ) << 8 ) | ( ( ( b ) & 0xff ) << 16 ) | \
+	          ( ( ( a ) & 0xff ) << 24 ) )
+
+#define MAXIMUM_UDP_REPLY ( SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) - \
+	                        sizeof( sfhip_udp_header ) )
+
+#define MAXIMUM_TCP_REPLY ( SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) - \
+	                        sizeof( sfhip_tcp_header ) )
 
 typedef struct HIPPACK16
 {
@@ -474,12 +508,12 @@ void sfhip_make_ip_packet( sfhip * hip,
 	ip->destination_address = destination_address;
 }
 
-int sfhip_make_udp_packet( sfhip * hip,
-                           sfhip_phy_packet_mtu * pkt,
-                           hipmac destination_mac,
-                           sfhip_address destination_address,
-                           int source_port,
-                           int destination_port )
+void sfhip_make_udp_packet( sfhip * hip,
+                            sfhip_phy_packet_mtu * pkt,
+                            hipmac destination_mac,
+                            sfhip_address destination_address,
+                            int source_port,
+                            int destination_port )
 {
 	sfhip_make_ip_packet( hip, pkt, destination_mac, destination_address );
 
@@ -491,8 +525,6 @@ int sfhip_make_udp_packet( sfhip * hip,
 	udp->checksum = 0;
 	udp->destination_port = HIPHTONS( destination_port );
 	udp->source_port = HIPHTONS( source_port );
-
-	return SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) - sizeof( sfhip_udp_header );
 }
 
 int sfhip_send_udp_packet( sfhip * hip,
@@ -609,11 +641,14 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 
 	if ( !hip->need_to_discover && hip->ip )
 	{
-		*( dhcpend++ ) = 0x32; // Request IP address
-		*( dhcpend++ ) = 0x04;
-		*( (uint32_t *)dhcpend ) =
-		    hip->ip; // XXX TODO: Fixme: this will probably explode on ARM
-		dhcpend += 4;
+		typedef struct HIPPACK16
+		{
+			uint8_t req, len;
+			hipbe32 ip;
+		} dhcp_ip_request_packet;
+
+		*( (dhcp_ip_request_packet *)dhcpend ) = ( dhcp_ip_request_packet ){ 0x32, 0x04, hip->ip };
+		dhcpend += sizeof( dhcp_ip_request_packet );
 	}
 
 	if ( hip->hostname )
@@ -778,13 +813,10 @@ int sfhip_dhcp_handle( sfhip * hip,
 	#endif
 
 int sfhip_handle_udp( sfhip * hip,
-                      sfhip_phy_packet_mtu * data,
-                      int length,
+                      sfhip_phy_packet_mtu * pkt,
                       void * ip_payload,
                       int ip_payload_length )
 {
-	(void)length; // unused
-
 	sfhip_udp_header * udp = ip_payload;
 
 	int payload_remain = ip_payload_length - sizeof( sfhip_udp_header );
@@ -814,26 +846,26 @@ int sfhip_handle_udp( sfhip * hip,
 
 	#if SFHIP_DHCP_CLIENT
 	if ( source_port == 67 && destination_port == 68 )
-	{
-		return sfhip_dhcp_handle( hip, data, payload, ulen );
-	}
+		return sfhip_dhcp_handle( hip, pkt, payload, ulen );
 	#endif
 
-	// if( iph->destination_address == hip->ip || iph->destination_address ==
-	// 0xffffffff )
-	//  TODO: Should we filter the IPs?
-	//  We can't be too aggressive, because DHCP offers are unicast.
+	#ifdef SFHIP_UDP_USER_HANDLER
 
-	// Do something else? Should we reply?
+	int SFHIP_UDP_USER_HANDLER( sfhip * hip, sfhip_phy_packet_mtu * pkt,
+	                            uint8_t * payload, int ulen, int source_port, int destination_port );
 
+	return SFHIP_UDP_USER_HANDLER( hip, pkt, payload, ulen, source_port,
+	                               destination_port );
+	#else
 	return 0;
+	#endif
 }
 
 	#if SFHIP_TCP_SOCKETS
 
-int sfhip_make_tcp_packet( sfhip * hip,
-                           sfhip_phy_packet_mtu * pkt,
-                           tcp_socket * sock )
+void sfhip_make_tcp_packet( sfhip * hip,
+                            sfhip_phy_packet_mtu * pkt,
+                            tcp_socket * sock )
 {
 	sfhip_make_ip_packet( hip, pkt, sock->remote_mac, sock->remote_address );
 
@@ -844,8 +876,6 @@ int sfhip_make_tcp_packet( sfhip * hip,
 	(void)tcp; // unused for now.
 
 	ip->destination_address = sock->remote_address;
-
-	return SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) - sizeof( sfhip_tcp_header );
 }
 
 int sfhip_send_tcp_packet( sfhip * hip,
@@ -875,6 +905,7 @@ int sfhip_send_tcp_packet( sfhip * hip,
 			payload_length = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_RESET:
+			printf( "RSTTING\n" );
 			flags = SFHIP_TCP_SOCKETS_FLAG_RESET;
 			sock->remote_address = 0;
 			sock->seq_num = HIPHTONL( tcp->ackno );
@@ -963,11 +994,9 @@ int sfhip_makeandsend_tcp_packet( sfhip * hip,
 
 int sfhip_handle_tcp( sfhip * hip,
                       sfhip_phy_packet_mtu * data,
-                      int length,
                       void * ip_payload,
                       int ip_payload_length )
 {
-	(void)length; // unused
 	sfhip_tcp_header * tcp = ip_payload;
 
 	if ( ip_payload_length - sizeof( sfhip_tcp_header ) < 0 )
@@ -1015,6 +1044,9 @@ int sfhip_handle_tcp( sfhip * hip,
 		ts++;
 		sockno++;
 	} while ( ts != tsend );
+
+	uint32_t seqno = HIPNTOHL( tcp->seqno );
+	uint32_t ackno = HIPNTOHL( tcp->ackno );
 
 	// In case we need to abort.  Do not initialize.
 	// If we do need to abort, it will be initialized later.
@@ -1080,7 +1112,7 @@ int sfhip_handle_tcp( sfhip * hip,
 		{
 			// We have a matching packet.  But we got a repeated SYN.
 
-			ts->ack_num = HIPNTOHL( tcp->seqno );
+			ts->ack_num = seqno;
 			ts->remote_mac = data->mac_header.source;
 		}
 
@@ -1106,8 +1138,6 @@ int sfhip_handle_tcp( sfhip * hip,
 	sfhip_make_tcp_packet( hip, data, ts );
 
 	ts->ms1024_since_last_rx_packet = 0;
-	uint32_t seqno = HIPNTOHL( tcp->seqno );
-	uint32_t ackno = HIPNTOHL( tcp->ackno );
 
 	// Tricky - this has to be here, because if the remote side
 	// sends us an ack, but we miss it, we can get stuck in this
@@ -1140,31 +1170,29 @@ int sfhip_handle_tcp( sfhip * hip,
 	{
 		int ackdiff = ackno - ts->seq_num;
 
-		if ( ts->mode == SFHIP_TCP_MODE_ESTABLISHED )
+		if ( ts->pending_send_size )
 		{
-			if ( ts->pending_send_size )
+			if ( ackdiff != ts->pending_send_size )
 			{
-				if ( ackdiff != ts->pending_send_size )
-				{
-					// SFHIP_WARN( "ACK Disagreement on established connection (%d,
-					// %d)\n", ackdiff, ts->pending_send_size );
+				// SFHIP_WARN( "ACK Disagreement on established connection (%d,
+				// %d)\n", ackdiff, ts->pending_send_size );
 
-					// This can happen if a packet was dropped in normal course.
-					// but ackdiff = 0 for that. No need to check the other corner cases.
-				}
-				else
+				// This can happen if a packet was dropped in normal course.
+				// but ackdiff = 0 for that. No need to check the other corner cases.
+			}
+			else
+			{
+				ts->pending_send_size = 0;
+				ts->pending_send_time = 0;
+				ts->seq_num = ackno;
+				acked = ackdiff;
+				if ( ts->mode == SFHIP_TCP_MODE_CLOSING_WAIT )
 				{
-					ts->pending_send_size = 0;
-					ts->pending_send_time = 0;
-					ts->seq_num = ackno;
-					acked = ackdiff;
+					ts->remote_address = 0;
+					sfhip_tcp_socket_closed( hip, sockno );
+					// Don't stop here, do the rest of the FIN flag check
 				}
 			}
-		}
-		else if ( ts->mode == SFHIP_TCP_MODE_CLOSING_WAIT )
-		{
-			// Connection finished closing.
-			ts->remote_address = 0;
 		}
 	}
 
@@ -1190,8 +1218,7 @@ int sfhip_handle_tcp( sfhip * hip,
 
 		int cansend;
 		if ( ts->pending_send_size == 0 )
-			cansend = SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) -
-			          sizeof( sfhip_tcp_header );
+			cansend = MAXIMUM_TCP_REPLY;
 		else
 			cansend = 0;
 
@@ -1206,16 +1233,23 @@ int sfhip_handle_tcp( sfhip * hip,
 
 	if ( flags & SFHIP_TCP_SOCKETS_FLAG_FIN )
 	{
+		// This is not hit on retry sends from a remote side.  Instead in those
+		// cases, we just hit the RESET path above.
+
 		ts->ack_num = seqno + 1;
 
-		ts->pending_send_size = 1; // FIN counts as size.
-
-		ts->mode = SFHIP_TCP_MODE_CLOSING_WAIT;
-
-		payload_output = SFHIP_TCP_OUTPUT_FIN;
-
-		// Remote side closed our connection.
-		sfhip_tcp_socket_closed( hip, sockno );
+		if ( ts->mode == SFHIP_TCP_MODE_CLOSING_WAIT )
+		{
+			// This is the normal path for after the foreign side sends a
+			// FINACK to us in response to our FIN to them.
+			payload_output = SFHIP_TCP_OUTPUT_ACK;
+		}
+		else
+		{
+			ts->pending_send_size = 1; // FIN counts as size.
+			ts->mode = SFHIP_TCP_MODE_CLOSING_WAIT;
+			payload_output = SFHIP_TCP_OUTPUT_FIN;
+		}
 
 		goto send_reply;
 	}
@@ -1321,11 +1355,11 @@ int sfhip_accept_packet( sfhip * hip, sfhip_phy_packet_mtu * data, int length )
 		switch ( protocol )
 		{
 			case SFHIP_IPPROTO_UDP: {
-				return sfhip_handle_udp( hip, data, length, ip_payload, ip_payload_length );
+				return sfhip_handle_udp( hip, data, ip_payload, ip_payload_length );
 			}
 			case SFHIP_IPPROTO_TCP: {
 				if ( iph->destination_address == hip->ip )
-					return sfhip_handle_tcp( hip, data, length, ip_payload, ip_payload_length );
+					return sfhip_handle_tcp( hip, data, ip_payload, ip_payload_length );
 			}
 			default:
 				break;
@@ -1424,7 +1458,7 @@ int sfhip_tick( sfhip * hip, sfhip_phy_packet_mtu * scratch, int dt_ms )
 				{
 					// Slow standoff, or waiting for someone to send data.
 					if ( !ss->pending_send_size ||
-					     ss->pending_send_time > ( ( ( uint32_t )retry_number ) + 1 ) << 8 )
+					     ss->pending_send_time > ( ( (uint32_t)retry_number ) + 1 ) << 8 )
 					{
 						// This is called whenever we are free to send, OR, we
 						// have waited a long time for an ACK and yet no ACK is
@@ -1535,7 +1569,7 @@ done:
 
 // Configuration asserts
 
-HIPSTATIC_ASSERT( ( (HIP_PHY_HEADER_LENGTH_BYTES)&3 ) == 0,
+HIPSTATIC_ASSERT( ( ( HIP_PHY_HEADER_LENGTH_BYTES ) & 3 ) == 0,
                   "HIP_PHY_HEADER_LENGTH_BYTES must be divisible by 4" );
 
 HIPSTATIC_ASSERT( sizeof( sfhip_phy_packet ) ==
