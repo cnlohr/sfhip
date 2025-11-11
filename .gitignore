@@ -1,0 +1,10 @@
+**.o
+**.bin
+**.dSYM
+**.a
+**.d
+*.DS_Store
+*.swp
+*.swo
+*.session
+tags
