@@ -93,9 +93,8 @@ IF YOU WANT TO RECEIVE/SEND UDP SOCKETS
      int plen = ####
      payload[0] = 'X';
      payload[1] = '\n';
-     sfhip_make_udp_packet( hip, pkt, mac->source, ip->source_address,
-         destination_port, source_port );
-     sfhip_send_udp_packet( hip, pkt, plen );
+     sfhip_send_udp_packet( hip, pkt, mac->source, ip->source_address,
+         destination_port, source_port, plen );
      return 1;
 
 IF YOU HAVE SFHIP_TCP_SOCKETS you must implement:
@@ -508,31 +507,23 @@ void sfhip_make_ip_packet( sfhip * hip,
 	ip->destination_address = destination_address;
 }
 
-void sfhip_make_udp_packet( sfhip * hip,
-                            sfhip_phy_packet_mtu * pkt,
-                            hipmac destination_mac,
-                            sfhip_address destination_address,
-                            int source_port,
-                            int destination_port )
+int sfhip_send_udp_packet( sfhip * hip,
+                           sfhip_phy_packet_mtu * pkt,
+                           hipmac destination_mac,
+                           sfhip_address destination_address,
+                           int source_port,
+                           int destination_port,
+                           int payload_length )
 {
 	sfhip_make_ip_packet( hip, pkt, destination_mac, destination_address );
 
-	sfhip_mac_header * mac = &pkt->mac_header;
-	sfhip_ip_header * ip = (sfhip_ip_header *)( mac + 1 );
+	sfhip_ip_header * ip = (sfhip_ip_header *)( ( &pkt->mac_header ) + 1 );
 	sfhip_udp_header * udp = (sfhip_udp_header *)( ip + 1 );
 
 	udp->length = 0;
 	udp->checksum = 0;
 	udp->destination_port = HIPHTONS( destination_port );
 	udp->source_port = HIPHTONS( source_port );
-}
-
-int sfhip_send_udp_packet( sfhip * hip,
-                           sfhip_phy_packet_mtu * pkt,
-                           int payload_length )
-{
-	sfhip_ip_header * ip = (sfhip_ip_header *)( ( &pkt->mac_header ) + 1 );
-	sfhip_udp_header * udp = (sfhip_udp_header *)( ip + 1 );
 
 	ip->length = HIPHTONS( sizeof( sfhip_ip_header ) + sizeof( sfhip_udp_header ) +
 	                       payload_length );
@@ -670,8 +661,7 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 
 	int plen = (int)( dhcpend - (uint8_t *)&req_packet->request );
 
-	sfhip_make_udp_packet( hip, (void *)req_packet, sfhip_mac_broadcast, 0xffffffff, 68, 67 );
-	sfhip_send_udp_packet( hip, (sfhip_phy_packet_mtu *)req_packet, plen );
+	sfhip_send_udp_packet( hip, (sfhip_phy_packet_mtu *)req_packet, sfhip_mac_broadcast, 0xffffffff, 68, 67, plen );
 
 	return 1;
 }

@@ -200,14 +200,14 @@ void sfhip_tcp_socket_closed( sfhip * hip, int sockno )
 
 void linux_got_packet( uint8_t * buf, int length )
 {
-	if ( ( rand() % 10 ) == 0 ) return;
+//	if ( ( rand() % 10 ) == 0 ) return;
 
 	sfhip_accept_packet( &hip, (sfhip_phy_packet_mtu *)buf, length );
 }
 
 int sfhip_send_packet( sfhip * hip, sfhip_phy_packet * data, int length )
 {
-	if ( ( rand() % 10 ) == 0 ) return 0;
+//	if ( ( rand() % 10 ) == 0 ) return 0;
 
 	return linux_send_packet( (uint8_t *)data, length );
 }
@@ -243,9 +243,8 @@ int example_udp_user_handler( sfhip * hip, sfhip_phy_packet_mtu * pkt, uint8_t *
 		payload[0] = 'X';
 		payload[1] = '\n';
 
-		sfhip_make_udp_packet( hip, pkt, mac->source, ip->source_address, destination_port, source_port );
-		sfhip_send_udp_packet( hip, pkt, plen );
-		return 1;
+		return sfhip_send_udp_packet( hip, pkt, mac->source, ip->source_address,
+		                              destination_port, source_port, plen );
 	}
 
 	return 0;
