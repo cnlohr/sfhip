@@ -99,8 +99,8 @@ int tcp_override( sfhip * hip,
 	sfhip_ip_header * ip = (sfhip_ip_header *)( mac + 1 );
 	sfhip_tcp_header * tcp = (sfhip_tcp_header *)( ip + 1 );
 
-	uint32_t seq_num = tcp->ackno;
-	uint32_t ack_num = tcp->seqno;
+	uint32_t seq_num = HIPHTONL( tcp->ackno );
+	uint32_t ack_num = HIPHTONL( tcp->seqno );
 	int local_port = tcp->destination_port;
 	int remote_port = tcp->source_port;
 	hipmac  remote_mac = mac->source;
@@ -132,14 +132,57 @@ int tcp_override( sfhip * hip,
 	ip_payload_length -= hlen;
 	ip_payload += hlen;
 
+	int reply_type_and_len = 0;
+
+
+
+	if( flags & SFHIP_TCP_SOCKETS_FLAG_ACK )
+	{
+		//seq_num += ip_payload_length;
+		printf( "%d %d\n", ack_num, seq_num );
+		if( seq_num == 2 )
+		{
+			// Reserved for the reply to the synack
+		}
+		else if( seq_num == 55 )
+		{
+			reply_type_and_len = 9;
+			sprintf( ip_payload, "packet #2" );
+		}
+		else if( seq_num == 64 )
+		{
+			reply_type_and_len = SFHIP_TCP_OUTPUT_FIN;
+		}
+		else if( seq_num == 65 )
+		{
+			// Reply to the above fin.
+		}
+	}
+
+
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_SYN )
 	{
 		printf( "Flags: %d\n", flags );
+		reply_type_and_len = SFHIP_TCP_OUTPUT_SYNACK;
+		seq_num = 1;
+		ack_num++;
 	}
-	else
+	else if( flags & SFHIP_TCP_SOCKETS_FLAG_PSH )
 	{
-		ip_payload_length = 0;
+		ack_num += ip_payload_length;
+
+		reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
 	}
+	else if ( flags & SFHIP_TCP_SOCKETS_FLAG_FIN  )
+	{
+		// Override ack.
+		reply_type_and_len = SFHIP_TCP_OUTPUT_ACK;
+		ack_num++;
+	}
+
+
+
+
 
 	sfhip_make_ip_packet( hip, pkt, remote_mac, sender );
 
@@ -149,40 +192,40 @@ int tcp_override( sfhip * hip,
 	int rflags = 0;
 	int seqsub = 0;
 
-	switch ( ip_payload_length )
+	switch ( reply_type_and_len )
 	{
 		case 0:
 			return 0;
 		default:
-			if ( ip_payload_length > 0 )
+			if ( reply_type_and_len > 0 )
 			{
 				rflags = SFHIP_TCP_SOCKETS_FLAG_PSH;
 				//sock->pending_send_size = payload_length;
 				break;
 			}
 		case SFHIP_TCP_OUTPUT_ACK:
-			ip_payload_length = 0;
+			reply_type_and_len = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_RESET:
 			rflags = SFHIP_TCP_SOCKETS_FLAG_RESET;
 			//sock->remote_address = 0;
 			//sock->seq_num = HIPHTONL( tcp->ackno );
-			ip_payload_length = 0;
+			reply_type_and_len = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_SYNACK:
 			rflags = SFHIP_TCP_SOCKETS_FLAG_SYN;
 			//sock->pending_send_size = 1;
-			ip_payload_length = 0;
+			reply_type_and_len = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_FIN:
 			rflags = SFHIP_TCP_SOCKETS_FLAG_FIN;
 			//sock->mode = SFHIP_TCP_MODE_CLOSING_WAIT;
 			//sock->pending_send_size = 1;
-			ip_payload_length = 0;
+			reply_type_and_len = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_KEEPALIVE:
 			rflags = SFHIP_TCP_SOCKETS_FLAG_PSH;
-			ip_payload_length = 0;
+			reply_type_and_len = 0;
 			seqsub = 1; // one less sequence numbers is how TCP handles keepalive.
 			break;
 	}
@@ -192,7 +235,7 @@ int tcp_override( sfhip * hip,
 	// uip does this... not sure why.
 	if ( rflags & SFHIP_TCP_SOCKETS_FLAG_SYN )
 	{
-		ip_payload_length = 4;
+		reply_type_and_len = 4;
 		optionadd = 4;
 		( (hipbe32 *)( tcp + 1 ) )[0] = HIPHTONL(
 		    0x02040000 |
@@ -211,15 +254,15 @@ int tcp_override( sfhip * hip,
 
 	tcp->flags = HIPHTONS( ( (uint8_t)rflags ) | ( ( ( sizeof( sfhip_tcp_header ) + optionadd ) >> 2 ) << 12 ) );
 
-	ip->length = HIPHTONS( sizeof( sfhip_ip_header ) + sizeof( sfhip_tcp_header ) + ip_payload_length );
+	ip->length = HIPHTONS( sizeof( sfhip_ip_header ) + sizeof( sfhip_tcp_header ) + reply_type_and_len );
 
 	// Build and compute checksum on TCP pseudo-header in-place.
 	uint16_t * csumstart = ( (void *)tcp ) - 12;
 	csumstart[0] = SFHIP_IPPROTO_TCP << 8;
-	csumstart[1] = HIPHTONS( sizeof( sfhip_tcp_header ) + ip_payload_length );
+	csumstart[1] = HIPHTONS( sizeof( sfhip_tcp_header ) + reply_type_and_len );
 
 		#if SFHIP_EMIT_TCP_CHECKSUM
-	uint16_t csum = sfhip_internet_checksum( (uint16_t *)csumstart, ip_payload_length + sizeof( sfhip_tcp_header ) + 12 );
+	uint16_t csum = sfhip_internet_checksum( (uint16_t *)csumstart, reply_type_and_len + sizeof( sfhip_tcp_header ) + 12 );
 	// No 0x0000 option for payload (maybe) TODO checkme.
 	// if( udpcsum == 0x0000 ) udpcsum = 0xffff;
 	tcp->checksum = csum;
@@ -235,7 +278,7 @@ int tcp_override( sfhip * hip,
 	    sfhip_internet_checksum( (uint16_t *)ip, sizeof( sfhip_ip_header ) );
 	ip->header_checksum = hs;
 
-	int packlen = ip_payload_length + HIP_PHY_HEADER_LENGTH_BYTES +
+	int packlen = reply_type_and_len + HIP_PHY_HEADER_LENGTH_BYTES +
 	              sizeof( sfhip_mac_header ) + sizeof( sfhip_ip_header ) +
 	              sizeof( sfhip_tcp_header );
 	return sfhip_send_packet( hip, (sfhip_phy_packet *)pkt, packlen );
