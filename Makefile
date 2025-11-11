@@ -4,7 +4,7 @@ ETHERNET_ADDR:=$(shell ip -4 -o addr show dev $(ETHERNET_DEV) | tr -s ' ' | cut 
 ETHERNET_ROUTE_DEFAULT:=$(shell ip route | grep enx00e04c681031 | grep default | cut -d' ' -f3)
 ETHERNET_ROUTE_BASE:=$(shell ip route | grep enx00e04c681031 | grep -v default | cut -d' ' -f1)
 
-setupforprommerge : linuxtest
+setupforprommerge :
 	sudo ip tuntap add dev "tap1" mode "tap" user $(shell whoami) || true
 	sudo ip link add name br0 type bridge || true
 	sudo ip link set dev br0 up || true

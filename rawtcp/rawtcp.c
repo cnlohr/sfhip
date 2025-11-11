@@ -139,7 +139,6 @@ int tcp_override( sfhip * hip,
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_ACK )
 	{
 		//seq_num += ip_payload_length;
-		printf( "%d %d\n", ack_num, seq_num );
 		if( seq_num == 2 )
 		{
 			// Reserved for the reply to the synack
