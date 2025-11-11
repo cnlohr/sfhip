@@ -437,6 +437,15 @@ sfhip_length_or_tcp_code sfhip_tcp_event( sfhip * hip, int sockno,
 void sfhip_tcp_socket_closed( sfhip * hip, int sockno );
 #endif
 
+// Utility functions
+int sfhip_send_udp_packet( sfhip * hip,
+                           sfhip_phy_packet_mtu * pkt,
+                           hipmac destination_mac,
+                           sfhip_address destination_address,
+                           int source_port,
+                           int destination_port,
+                           int payload_length ) __attribute__( ( noinline ) );
+
 // Constants
 extern hipmac sfhip_mac_broadcast;
 
@@ -500,6 +509,8 @@ void sfhip_make_ip_packet( sfhip * hip,
 	mac->ethertype = HIPHTONS( 0x0800 );
 
 	sfhip_ip_header * ip = (sfhip_ip_header *)( mac + 1 );
+
+	ip->destination_address = destination_address;
 	ip->version_ihl = 0x45;
 	ip->dscp_ecn = 0x00;
 	ip->length = 0;
@@ -509,7 +520,6 @@ void sfhip_make_ip_packet( sfhip * hip,
 	// used for the UDP pseduo-header checksum later.
 	ip->offset_and_flags = 0x0000;
 	ip->source_address = hip->ip;
-	ip->destination_address = destination_address;
 }
 
 int sfhip_send_udp_packet( sfhip * hip,
@@ -606,6 +616,7 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 
 	uint32_t txid = hip->dhcp_transaction_id_last = hip->ms_elapsed;
 
+	// Only set fixed value fields here, dynamic fields manually fill in
 	*req_packet = ( sfhip_phy_packet_dhcp_request ){
 	    .request = 0x01, // "Request"
 	    .hwtype = 0x01,  // "Ethernet"
@@ -1189,8 +1200,8 @@ int sfhip_handle_tcp( sfhip * hip,
 				acked = ackdiff;
 				if ( ts->mode == SFHIP_TCP_MODE_CLOSING_WAIT )
 				{
-					ts->remote_address = 0;
 					sfhip_tcp_socket_closed( hip, sockno );
+					ts->remote_address = 0;
 					// Don't stop here, do the rest of the FIN flag check
 				}
 			}
