@@ -443,7 +443,12 @@ extern hipmac sfhip_mac_broadcast;
 #ifdef SFHIP_IMPLEMENTATION
 
 // Internal functions
-hipbe16 internet_checksum( uint8_t * data, int length );
+hipbe16 internet_checksum( uint8_t * data, int length ) __attribute__( ( noinline ) );
+
+void sfhip_make_ip_packet( sfhip * hip,
+                           sfhip_phy_packet_mtu * pkt,
+                           hipmac destination_mac,
+                           sfhip_address destination_address ) __attribute__( ( noinline ) );
 
 // Shortcuts to reply-to-sender.
 int sfhip_mac_reply( sfhip * hip, sfhip_phy_packet * data, int length );
@@ -591,8 +596,6 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 		uint8_t additional_dhcp_payload[SFHIP_MTU - 282];
 	} sfhip_phy_packet_dhcp_request;
 
-	uint32_t txid = hip->dhcp_transaction_id_last = hip->ms_elapsed;
-
 	sfhip_phy_packet_dhcp_request * req_packet =
 	    (sfhip_phy_packet_dhcp_request *)scratch;
 
@@ -601,26 +604,34 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 		hip->need_to_discover = true;
 	}
 
+	uint32_t txid = hip->dhcp_transaction_id_last = hip->ms_elapsed;
+
 	*req_packet = ( sfhip_phy_packet_dhcp_request ){
 	    .request = 0x01, // "Request"
 	    .hwtype = 0x01,  // "Ethernet"
 	    .hwlen = 0x06,   // MAC Address length
 	    .hops = 0,
-	    .transaction_id = txid,
 	    .seconds_elapsed = HIPHTONS( 1 ),
-	    .bootp_flags = 0, // Unicast
-	    .client_address = hip->ip,
-	    .client_mac = hip->self_mac,
+	    .bootp_flags = 0,                       // Unicast
 	    .magic_cookie = HIPHTONL( 0x63825363 ), // DHCP magic cookie.
 	    .additional_dhcp_payload = {
-	        0x35,                                // DHCP Request
-	        0x01,                                // Length 1
-	        hip->need_to_discover ? 0x01 : 0x03, // Discover or request
-	        0x37,                                // Parameter Request List
+	        0x35, // DHCP Request
+	        0x01, // Length 1
+	        0x00, // Placeholder. See below.
+	        0x37, // Parameter Request List
 	        0x02,
 	        0x01,
 	        0x03, // Request subnet mask and router
 	    } };
+
+	// Splitting the dynamic poritons of the struct that are dynamic
+	// cuts out about 100 bytes of code.
+	req_packet->transaction_id = txid;
+	req_packet->client_address = hip->ip;
+	req_packet->client_mac = hip->self_mac;
+
+	// Discover or request
+	req_packet->additional_dhcp_payload[2] = hip->need_to_discover ? 0x01 : 0x03;
 
 	// 8 = size of additional_dhcp_payload that is filled out.
 	uint8_t * dhcpend = req_packet->additional_dhcp_payload + 7;
