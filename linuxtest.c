@@ -16,8 +16,6 @@
 
 #include <poll.h>
 
-#include "example.c"
-
 #define FAIL( x... )          \
 	{                         \
 		fprintf( stderr, x ); \
@@ -28,6 +26,11 @@ int fdtap, fddev;
 
 uint8_t mymac_dev[6];
 uint8_t mymac_tap[6];
+
+int linux_send_packet( uint8_t * data, int length );
+void linux_got_packet( uint8_t * buf, int length );
+int linuxtest( const char * devname_tap, const char * devname_eth );
+void linux_tick_callback();
 
 int linux_send_packet( uint8_t * data, int length )
 {

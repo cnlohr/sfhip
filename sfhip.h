@@ -180,7 +180,10 @@ hipbe32 remote_host );
 	#define SFHIP_WARN( x... )
 #endif
 
+// Options
 // #define SFHIP_UDP_USER_HANDLER (function name)
+
+// #define SFHIP_TCP_OVERRIDE_HANDLER (function name)
 
 ///////////////////////////////////////////////////////////////////////////////
 // Internal
@@ -879,15 +882,11 @@ void sfhip_make_tcp_packet( sfhip * hip,
                             sfhip_phy_packet_mtu * pkt,
                             tcp_socket * sock )
 {
+//	sfhip_mac_header * mac = &pkt->mac_header;
+//	sfhip_ip_header * ip = (sfhip_ip_header *)( mac + 1 );
+//	sfhip_tcp_header * tcp = (sfhip_tcp_header *)( ip + 1 );
+
 	sfhip_make_ip_packet( hip, pkt, sock->remote_mac, sock->remote_address );
-
-	sfhip_mac_header * mac = &pkt->mac_header;
-	sfhip_ip_header * ip = (sfhip_ip_header *)( mac + 1 );
-	sfhip_tcp_header * tcp = (sfhip_tcp_header *)( ip + 1 );
-
-	(void)tcp; // unused for now.
-
-	ip->destination_address = sock->remote_address;
 }
 
 int sfhip_send_tcp_packet( sfhip * hip,
@@ -917,7 +916,6 @@ int sfhip_send_tcp_packet( sfhip * hip,
 			payload_length = 0;
 			break;
 		case SFHIP_TCP_OUTPUT_RESET:
-			printf( "RSTTING\n" );
 			flags = SFHIP_TCP_SOCKETS_FLAG_RESET;
 			sock->remote_address = 0;
 			sock->seq_num = HIPHTONL( tcp->ackno );
@@ -1366,13 +1364,26 @@ int sfhip_accept_packet( sfhip * hip, sfhip_phy_packet_mtu * data, int length )
 
 		switch ( protocol )
 		{
-			case SFHIP_IPPROTO_UDP: {
+			case SFHIP_IPPROTO_UDP:
 				return sfhip_handle_udp( hip, data, ip_payload, ip_payload_length );
-			}
-			case SFHIP_IPPROTO_TCP: {
+	#if SFHIP_TCP_SOCKETS
+			case SFHIP_IPPROTO_TCP:
 				if ( iph->destination_address == hip->ip )
 					return sfhip_handle_tcp( hip, data, ip_payload, ip_payload_length );
-			}
+				break;
+	#elif defined( SFHIP_TCP_OVERRIDE_HANDLER )
+			case SFHIP_IPPROTO_TCP:
+
+				int SFHIP_TCP_OVERRIDE_HANDLER( sfhip * hip,
+				                                sfhip_phy_packet_mtu * data,
+				                                void * ip_payload,
+				                                int ip_payload_length );
+
+				if ( iph->destination_address == hip->ip )
+					return SFHIP_TCP_OVERRIDE_HANDLER( hip, data, ip_payload, ip_payload_length );
+				break;
+	#endif
+
 			default:
 				break;
 		}

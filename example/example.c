@@ -25,9 +25,7 @@ uint64_t last_time = 0;
 struct timespec monotime;
 int64_t runtime = 0;
 
-int linux_send_packet( uint8_t * data, int length );
-void linux_got_packet( uint8_t * buf, int length );
-int linuxtest( const char * devname_tap, const char * devname_eth );
+#include "linuxtest.c"
 
 typedef enum
 {

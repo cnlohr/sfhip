@@ -19,5 +19,5 @@ jobs:
 #          make \
 #          build-essential
     - name: Build
-      run: sudo make clean testlocal
+      run: sudo make -C examples clean testlocal
 
