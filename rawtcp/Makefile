@@ -6,6 +6,12 @@ rawtcp : rawtcp.c
 test : rawtcp
 	./rawtcp tap1 -
 
+tablegen : tablegen.c
+	gcc -o $@ $^
+
+httptable.h : tablegen
+	./tablegen > httptable.h
+
 clean :
 	rm -rf *.o *~ rawtcp
 
