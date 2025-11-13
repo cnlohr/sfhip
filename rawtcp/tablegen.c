@@ -61,7 +61,12 @@ void CommonRange( int start, int filestart, int fileend )
 			char c = fileList[i][cno];
 			if( matchingchar == -1 )
 				matchingchar = c;
-			else if( matchingchar != 
+			else if( matchingchar != c )
+			{
+				CommonRange
+				// pull off top and bottom from here.
+				return;
+			}
 		}
 	}
 }
