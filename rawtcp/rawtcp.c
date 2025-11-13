@@ -19,6 +19,9 @@
 #include <stdint.h>
 
 
+#include "httptable.h"
+
+
 #define TAP_ADDR "192.168.13.252"
 sfhip hip = {
     .ip = HIPIP( 192, 168, 13, 251 ),
@@ -169,6 +172,36 @@ int tcp_override( sfhip * hip,
 	else if( flags & SFHIP_TCP_SOCKETS_FLAG_PSH )
 	{
 		ack_num += ip_payload_length;
+
+		uint8_t * cur = httptable;
+		int pldidx = 0;
+		do
+		{
+			uint32_t fail = *((uint32_t*)cur);
+			if( fail & 0x
+			cur += 4;
+			do
+			{
+				char c = ip_payload[pldidx++];
+				printf( "PLC: %d (%c) IDX %d\n", c, c, c );
+				char comp = *(cur++);
+				if( !comp )
+				{
+					cur = httptable + *((uint32_t*)cur);
+				}
+				else if( c != comp )
+				{
+					cur = fail;
+					pldidx--;
+				}
+				else
+				{
+					cur++;
+				}
+			}
+		}
+
+uint8_t httptable[] = { 
 
 		reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
 	}
