@@ -13,6 +13,16 @@ While still in early stages of development, but as it stands it has:
 6. An example connectionless HTTP server (in ![rawtcp/](rawtcp))
 7. A basic example with stateful TCP and UDP replies in ![example/](example))
 
+Design Principles:
+1. Everything should be two-byte-aligned (because MAC headers are 14 bytes instead of 16).
+2. Do not add frills.  Only what's needed for use with other systems.
+3. Push as much logic as is feasible to the user layer.  For instance, with TCP, the user layer is responsbile for being able retransmit data when requested by the stack.
+4. Be considerate of RISC-V and ARM ABIs surrounding ideally 6 or less parameters being passed in.
+5. Perform tail calls wherever possible.
+6. Avoid register spill where possible.
+7. Assume HTONS, HTONL aren't free.
+8. Make the job for the compiler's optimizer easy.
+
 The stack is all designed around operating with either immediate-replies to other packets, by re-writing RX frames to TX, as well as a `tick()` function for sending unsolicited packets.
 
 A basic connectionless TCP implementation takes about 46 bytes of RAM, plus one scratch buffer for TX/RX of whatever MTU size is used, plus about 4kB of text.  For stateful TCP, it takes about 40 bytes per connection.
