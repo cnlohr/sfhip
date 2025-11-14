@@ -173,37 +173,56 @@ int tcp_override( sfhip * hip,
 	{
 		ack_num += ip_payload_length;
 
-		uint8_t * cur = httptable;
+		printf( "%c%c%c%c\n", ((uint8_t*)ip_payload)[0], ((uint8_t*)ip_payload)[1], ((uint8_t*)ip_payload)[2], ((uint8_t*)ip_payload)[3] );
+
+		int emit = -1;
+		const uint8_t * cur = httpstatetable;
 		int pldidx = 0;
 		do
 		{
+			printf( "CURDIFF: %08x\n", cur - httpstatetable );
 			uint32_t fail = *((uint32_t*)cur);
-			if( fail & 0x
 			cur += 4;
+
+			printf( "CUR: %08x\n", fail );
+			if( fail & 0x80000000 )
+			{
+				emit = fail & 0x7fffffff;
+				cur = httpstatetable + *((uint32_t*)cur);
+				continue;
+			}
+
 			do
 			{
-				char c = ip_payload[pldidx++];
-				printf( "PLC: %d (%c) IDX %d\n", c, c, c );
+				char c = ((uint8_t*)ip_payload)[pldidx++];
 				char comp = *(cur++);
+				printf( "PLC: %d (%c) IDX %d comp: %d\n", c, c, pldidx, comp );
 				if( !comp )
 				{
-					cur = httptable + *((uint32_t*)cur);
+					printf( "!comp. Setting to %02x\n", *((uint32_t*)cur) );
+					cur = httpstatetable + *((uint32_t*)cur);
+					break;
 				}
 				else if( c != comp )
 				{
-					cur = fail;
-					pldidx--;
+					printf( "comp != c %d != %d; set to %02x\n", c, comp, fail );
+					if( fail & 0x40000000 )
+						fail &= 0x3fffffff;// Continue
+					else
+						pldidx--;
+					break;
+					cur = httpstatetable + fail;
 				}
 				else
 				{
-					cur++;
+					// Keep going
 				}
-			}
-		}
+			}while(pldidx < ip_payload_length);
+		} while( 1);
 
-uint8_t httptable[] = { 
+		printf( "Emit! %d\n", emit );
 
-		reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
+		//reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
 	}
 	else if ( flags & SFHIP_TCP_SOCKETS_FLAG_FIN  )
 	{
