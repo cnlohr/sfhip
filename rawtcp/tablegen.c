@@ -116,6 +116,7 @@ tabletoken * CommonRange( int start, int filestart, int fileend )
 				ret->fail = fail;
 				ret->matching_string = malloc( cno - start + 1 );
 				memcpy( ret->matching_string, fileList[filestart] + start, cno-start );
+				fprintf( stderr, "MATCHING_STR in non-match:\"%s\"\n", ret->matching_string );
 				ret->matching_string[cno-start] = 0;
 				return ret;
 			}
@@ -315,6 +316,8 @@ int main()
 
 			int lenplus = (len + nhdr) | 0x80000000;
 
+			memcpy( data_image + endpointer, header, nhdr );
+			endpointer += nhdr;
 			FILE * f = fopen( fname, "rb" );
 			int r = fread( data_image + endpointer, len, 1, f );
 			fclose( f );
@@ -329,7 +332,7 @@ int main()
 
 		}
 
-		outFileLens[i] = endpointer - outFilePointers[i];
+		int flen = outFileLens[i] = endpointer - outFilePointers[i];
 	}
 
 

@@ -111,6 +111,7 @@ int tcp_override( sfhip * hip,
 
 	uint16_t flags = HIPNTOHS( tcp->flags );
 
+	int also_fin = false;
 	int hlen = ( flags >> 12 ) << 2;
 
 	// TCP packet size does not match, or runt packet.
@@ -141,24 +142,7 @@ int tcp_override( sfhip * hip,
 
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_ACK )
 	{
-		//seq_num += ip_payload_length;
-		if( seq_num == 2 )
-		{
-			// Reserved for the reply to the synack
-		}
-		else if( seq_num == 55 )
-		{
-			reply_type_and_len = 9;
-			sprintf( ip_payload, "packet #2" );
-		}
-		else if( seq_num == 64 )
-		{
-			reply_type_and_len = SFHIP_TCP_OUTPUT_FIN;
-		}
-		else if( seq_num == 65 )
-		{
-			// Reply to the above fin.
-		}
+		printf( "CHECK SEQ: %d\n", seq_num );
 	}
 
 
@@ -175,20 +159,20 @@ int tcp_override( sfhip * hip,
 
 		printf( "%c%c%c%c\n", ((uint8_t*)ip_payload)[0], ((uint8_t*)ip_payload)[1], ((uint8_t*)ip_payload)[2], ((uint8_t*)ip_payload)[3] );
 
-		int emit = -1;
+		int emit = 0; // 0 = 404 not found.
+
 		const uint8_t * cur = httpstatetable;
 		int pldidx = 0;
 		do
 		{
-			printf( "CURDIFF: %08x\n", cur - httpstatetable );
 			uint32_t fail = *((uint32_t*)cur);
 			cur += 4;
 
-			printf( "CUR: %08x\n", fail );
 			if( fail & 0x80000000 )
 			{
 				emit = fail & 0x7fffffff;
 				cur = httpstatetable + *((uint32_t*)cur);
+				printf( "HITEMIT: %d\n", emit );
 				continue;
 			}
 
@@ -196,33 +180,46 @@ int tcp_override( sfhip * hip,
 			{
 				char c = ((uint8_t*)ip_payload)[pldidx++];
 				char comp = *(cur++);
-				printf( "PLC: %d (%c) IDX %d comp: %d\n", c, c, pldidx, comp );
+				printf( "CHECK: %c %c\n", c, comp );
 				if( !comp )
 				{
-					printf( "!comp. Setting to %02x\n", *((uint32_t*)cur) );
 					cur = httpstatetable + *((uint32_t*)cur);
+					printf( "! %d %d (%c %c) JUMP TO: %02x\n", c, comp, c, comp, cur );
 					break;
 				}
 				else if( c != comp )
 				{
-					printf( "comp != c %d != %d; set to %02x\n", c, comp, fail );
+					printf( "!= %d %d (%c %c) FAIL TO: %08x\n", c, comp, c, comp, fail );
 					if( fail & 0x40000000 )
 						fail &= 0x3fffffff;// Continue
 					else
 						pldidx--;
-					break;
 					cur = httpstatetable + fail;
+					break;
 				}
 				else
 				{
 					// Keep going
 				}
-			}while(pldidx < ip_payload_length);
-		} while( 1);
+			}while(pldidx < ip_payload_length );
+		} while( pldidx < ip_payload_length );
 
-		printf( "Emit! %d\n", emit );
+		uint32_t ofs = httpoffsets[emit*2+0];
+		uint32_t tlen = httpoffsets[emit*2+1];
 
-		//reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
+		int max_send = 1024 - emit;
+		int dosend = tlen;
+		if( tlen > max_send )
+		{
+			dosend = max_send;
+		}
+		else
+		{
+			also_fin = true;
+		}
+
+		memcpy( ip_payload, httpoutputtable + ofs, dosend );
+		reply_type_and_len = dosend;
 	}
 	else if ( flags & SFHIP_TCP_SOCKETS_FLAG_FIN  )
 	{
@@ -280,6 +277,9 @@ int tcp_override( sfhip * hip,
 			seqsub = 1; // one less sequence numbers is how TCP handles keepalive.
 			break;
 	}
+
+	if( also_fin )
+		rflags |= SFHIP_TCP_SOCKETS_FLAG_FIN;
 
 	rflags |= SFHIP_TCP_SOCKETS_FLAG_ACK;
 
