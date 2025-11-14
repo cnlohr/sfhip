@@ -71,8 +71,9 @@ tabletoken * GenToken()
 tabletoken * do404;
 tabletoken * lineend;
 tabletoken * continuematch;
+tabletoken * terminal;
 
-tabletoken * CommonRange( int start, int filestart, int fileend )
+tabletoken * CommonRange( int start, int filestart, int fileend, tabletoken * failif )
 {
 	fprintf( stderr, "Common Rage: %d %d %d\n", start, filestart, fileend );
 
@@ -86,6 +87,7 @@ tabletoken * CommonRange( int start, int filestart, int fileend )
 			char c = fileList[i][cno];
 			if( c == 0 && fileend - filestart == 1 )
 			{
+				fprintf( stderr, "Inner fail %d %d %d\n", c, fileend, filestart );
 				tabletoken * pass = GenToken();
 				pass->emit_token = filestart + 1; // file ID
 				pass->pass = lineend;
@@ -93,7 +95,7 @@ tabletoken * CommonRange( int start, int filestart, int fileend )
 
 				tabletoken * ret = GenToken();
 				ret->pass = pass;
-				ret->fail = do404;
+				ret->fail = failif;
 				ret->matching_string = malloc( cno - start + 2 );
 				memcpy( ret->matching_string, fileList[filestart] + start, cno-start );
 				ret->matching_string[cno-start] = ' ';
@@ -107,13 +109,13 @@ tabletoken * CommonRange( int start, int filestart, int fileend )
 				matchingchar = c;
 			else if( matchingchar != c )
 			{
-				fprintf( stderr, "Disagree %c %c (%d)\n", matchingchar, c, i );
-				tabletoken * pass = CommonRange( cno, filestart, i ); 
-				tabletoken * fail = CommonRange( cno - 1, i, fileend );
+				fprintf( stderr, "Disagree %c %c (%d)  Splitting [%d %d %d]\n", matchingchar, c, i, filestart, i, fileend );
+				tabletoken * fail = CommonRange( cno, i, fileend, terminal );
+				tabletoken * pass = CommonRange( cno, filestart, i, fail ); 
 
 				tabletoken * ret = GenToken();
 				ret->pass = pass;
-				ret->fail = fail;
+				ret->fail = failif;
 				ret->matching_string = malloc( cno - start + 1 );
 				memcpy( ret->matching_string, fileList[filestart] + start, cno-start );
 				fprintf( stderr, "MATCHING_STR in non-match:\"%s\"\n", ret->matching_string );
@@ -134,11 +136,16 @@ int AppendData( uint8_t * data, int len )
 
 void PrintTree( tabletoken * search, int depth )
 {
+	if( search == terminal )
+	{
+		fprintf( stderr, "%*cTERMINAL\n", depth+1, ' ' );
+		return;
+	}
 	if( search->emit_token >= 0 )
-		fprintf( stderr, "%*c%d\n", depth+1, ' ', search->emit_token );
+		fprintf( stderr, "%*c%d (%02x) (%02x %02x)\n", depth+1, ' ', search->emit_token, search->stream_location, search->pass?search->pass->stream_location:0, search->fail?search->fail->stream_location:0 );
 	else
 	{
-		fprintf( stderr, "%*c%s\n", depth+1, ' ', search->matching_string );
+		fprintf( stderr, "%*c%s (%02x) (%02x %02x)\n", depth+1, ' ', search->matching_string, search->stream_location, search->pass?search->pass->stream_location:0, search->fail?search->fail->stream_location:0 );
 		PrintTree( search->pass, depth + 1 );
 		PrintTree( search->fail, depth + 1 );
 	}
@@ -178,9 +185,9 @@ int main()
 
 	lineend = GenToken();
 	tabletoken * lineend_final = GenToken();
-	tabletoken * terminal = GenToken();
+	terminal = GenToken();
 
-	tabletoken * search = CommonRange( 0, 0, nrFiles );
+	tabletoken * search = CommonRange( 0, 0, nrFiles, do404 );
 
 	start->matching_string = "GET ";
 	start->pass = search;
@@ -205,12 +212,10 @@ int main()
 	do404->matching_string = "";
 
 
-	terminal->matching_string = ""; // Tricky: code 1 = consume, always.
+	terminal->matching_string = "\x01"; // Tricky: code 1 = consume, always.
 	terminal->fail = terminal;
 	terminal->failcont = 1;
 	terminal->pass = terminal;
-
-	PrintTree( search, 0 );
 
 	for( int i = 0; i < numEmittableTokens; i++ )
 	{
@@ -257,6 +262,13 @@ int main()
 		}
 	}
 
+	fprintf( stderr, "Important Elements:\n" );
+	fprintf( stderr, "do404 = %02x\n" , do404->stream_location );
+	fprintf( stderr, "lineend = %02x\n" , lineend->stream_location );
+	fprintf( stderr, "start = %02x\n" , start->stream_location );
+	fprintf( stderr, "terminal = %02x\n" , terminal->stream_location );
+
+	PrintTree( search, 0 );
 
 
 	printf( "#ifndef _HTTP_TABLE_H\n" );
@@ -286,7 +298,7 @@ int main()
 			// 404.
 			char header[960];
 			int nhdr;
-			nhdr = snprintf( header, sizeof(header), "HTTP/1.1 404 Not Found\r\n\r\n" );
+			nhdr = snprintf( header, sizeof(header), "HTTP/1.1 404 Not Found\r\n\r\n404 Not Found" );
 			AppendData( header, nhdr );
 		}
 		else
@@ -335,8 +347,10 @@ int main()
 		int flen = outFileLens[i] = endpointer - outFilePointers[i];
 	}
 
+	
+	printf( "#define nrFileOffsets %d\n", nrFiles + 1 );
 
-	printf( "const uint32_t httpoffsets[%d] = {\n",(nrFiles + 1)*2);
+	printf( "const uint32_t httpoffsets[nrFileOffsets*2] = {\n");
 	for( int i = 0; i < nrFiles + 1; i++ )
 	{
 		printf( "\t%d, %d,\n", outFilePointers[i], outFileLens[i] );
