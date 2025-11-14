@@ -3,8 +3,8 @@
 
 /**
  General coding considerations:
-  1. Consider something like RISC-V where the first 5 parameters are passed
-     by a0..a4 registers.
+  1. Consider something like RISC-V where the first 6 parameters are passed
+     by a0..a5 registers.
   2. Consider something like RV32E, where you only get 16 total registers, so
      try to write the code to not register spill.  You can do this by writing
      the code so at any one point, only a few variables are needed.
