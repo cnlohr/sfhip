@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <stdint.h>
 
-#define MAX_SIZE (1024*1024)
+#define MAX_SIZE (1024*1024*128)
 #define MAX_TOKENS 1024
 
 static uint8_t data_image[MAX_SIZE];

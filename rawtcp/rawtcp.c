@@ -142,14 +142,14 @@ int tcp_override( sfhip * hip,
 
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_ACK )
 	{
-		if( seq_num > 2 )
+		if( seq_num > 2 && !(flags & SFHIP_TCP_SOCKETS_FLAG_FIN) )
 		{
-			int fileid = (1026-seq_num)&0x3ff;
+			int fileid = (1024-seq_num)&0x3ff;
 			int bank = (seq_num>>10);
 
-			int sent_first_time = 1024-fileid;
-			int bsofar = sent_first_time + (bank-1)*1024;
-
+			int sent_first_time = 1022-fileid;
+			int bsofar = sent_first_time + (bank)*1024;
+			//printf( "Ack: %d FID: %d  Bank: %d  Send first: %d  bsofar: %d\n", seq_num, fileid, bank, sent_first_time, bsofar );
 			if( fileid < nrFileOffsets ) 
 			{
 				uint32_t ofs = httpoffsets[fileid*2+0] + bsofar;
@@ -165,7 +165,7 @@ int tcp_override( sfhip * hip,
 				{
 					also_fin = true;
 				}
-
+				//printf( "DOS: %d  %d  %d\n", dosend, tlen, tlen+bsofar );
 				memcpy( ip_payload, httpoutputtable + ofs, dosend );
 				reply_type_and_len = dosend;
 			}
@@ -216,7 +216,7 @@ int tcp_override( sfhip * hip,
 				}
 				else if( c != comp )
 				{
-					//	printf( "!= %d %d (%c %c) FAIL TO: %08x\n", c, comp, c, comp, fail );
+					//printf( "!= %d %d (%c %c) FAIL TO: %08x\n", c, comp, c, comp, fail );
 					if( fail & 0x40000000 )
 						fail &= 0x3fffffff;// Continue
 					else
@@ -236,7 +236,7 @@ int tcp_override( sfhip * hip,
 		uint32_t tlen = httpoffsets[emit*2+1];
 
 		//printf( "EMIT: %d  %d %d\n", emit, ofs, tlen );
-		int max_send = 1024 - emit;
+		int max_send = 1022 - emit;
 		int dosend = tlen;
 		if( tlen > max_send )
 		{
