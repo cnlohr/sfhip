@@ -19,11 +19,14 @@
 #include <stdint.h>
 
 
-#define TAP_ADDR "192.168.13.252"
+#include "httptable.h"
+
+
+#define TAP_ADDR "192.168.14.252"
 sfhip hip = {
-    .ip = HIPIP( 192, 168, 13, 251 ),
+    .ip = HIPIP( 192, 168, 14, 251 ),
     .mask = HIPIP( 255, 255, 255, 0 ),
-    .gateway = HIPIP( 192, 168, 13, 1 ),
+    .gateway = HIPIP( 192, 168, 14, 1 ),
     .self_mac = { 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55 },
 //    .hostname = "sfhip_test_linux",
 };
@@ -108,6 +111,7 @@ int tcp_override( sfhip * hip,
 
 	uint16_t flags = HIPNTOHS( tcp->flags );
 
+	int also_fin = false;
 	int hlen = ( flags >> 12 ) << 2;
 
 	// TCP packet size does not match, or runt packet.
@@ -138,30 +142,39 @@ int tcp_override( sfhip * hip,
 
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_ACK )
 	{
-		//seq_num += ip_payload_length;
-		if( seq_num == 2 )
+		if( seq_num > 2 )
 		{
-			// Reserved for the reply to the synack
-		}
-		else if( seq_num == 55 )
-		{
-			reply_type_and_len = 9;
-			sprintf( ip_payload, "packet #2" );
-		}
-		else if( seq_num == 64 )
-		{
-			reply_type_and_len = SFHIP_TCP_OUTPUT_FIN;
-		}
-		else if( seq_num == 65 )
-		{
-			// Reply to the above fin.
+			int fileid = (1026-seq_num)&0x3ff;
+			int bank = (seq_num>>10);
+
+			int sent_first_time = 1024-fileid;
+			int bsofar = sent_first_time + (bank-1)*1024;
+
+			if( fileid < nrFileOffsets ) 
+			{
+				uint32_t ofs = httpoffsets[fileid*2+0] + bsofar;
+				uint32_t tlen = httpoffsets[fileid*2+1] - bsofar;
+
+				int max_send = 1024;
+				int dosend = tlen;
+				if( tlen > max_send )
+				{
+					dosend = max_send;
+				}
+				else
+				{
+					also_fin = true;
+				}
+
+				memcpy( ip_payload, httpoutputtable + ofs, dosend );
+				reply_type_and_len = dosend;
+			}
 		}
 	}
 
 
 	if( flags & SFHIP_TCP_SOCKETS_FLAG_SYN )
 	{
-		printf( "Flags: %d\n", flags );
 		reply_type_and_len = SFHIP_TCP_OUTPUT_SYNACK;
 		seq_num = 1;
 		ack_num++;
@@ -170,7 +183,73 @@ int tcp_override( sfhip * hip,
 	{
 		ack_num += ip_payload_length;
 
-		reply_type_and_len = sprintf( ip_payload, "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\nTesting!");
+		//printf( "FIRST 4:%c%c%c%c\n", ((uint8_t*)ip_payload)[0], ((uint8_t*)ip_payload)[1], ((uint8_t*)ip_payload)[2], ((uint8_t*)ip_payload)[3] );
+
+		int emit = 0; // 0 = 404 not found.
+
+		const uint8_t * cur = httpstatetable;
+		int pldidx = 0;
+		do
+		{
+			uint32_t fail = *((uint32_t*)cur);
+			//printf( "CFIRST (fail): %02x\n", fail);
+			cur += 4;
+
+			if( fail & 0x80000000 )
+			{
+				emit = fail & 0x7fffffff;
+				cur = httpstatetable + *((uint32_t*)cur);
+				continue;
+			}
+
+			do
+			{
+				char c = ((uint8_t*)ip_payload)[pldidx++];
+				char comp = *(cur++);
+				//printf( "COMP: %d %02x\n", comp, cur - httpstatetable );
+				if( !comp || comp == 1 )
+				{
+					cur = httpstatetable + *((uint32_t*)cur);
+					//printf( "! %d %d (%c %c) JUMP TO: %02x\n", c, comp, c, comp, cur -httpstatetable);
+					if( comp == 0 ) pldidx--;
+					break;
+				}
+				else if( c != comp )
+				{
+					//	printf( "!= %d %d (%c %c) FAIL TO: %08x\n", c, comp, c, comp, fail );
+					if( fail & 0x40000000 )
+						fail &= 0x3fffffff;// Continue
+					else
+						pldidx--;
+					cur = httpstatetable + fail;
+					break;
+				}
+				else
+				{
+					//printf( "KEEP GOING: %d %d\n", c, comp );
+					// Keep going
+				}
+			}while(pldidx < ip_payload_length );
+		} while( pldidx < ip_payload_length );
+
+		uint32_t ofs = httpoffsets[emit*2+0];
+		uint32_t tlen = httpoffsets[emit*2+1];
+
+		//printf( "EMIT: %d  %d %d\n", emit, ofs, tlen );
+		int max_send = 1024 - emit;
+		int dosend = tlen;
+		if( tlen > max_send )
+		{
+			dosend = max_send;
+		}
+		else
+		{
+			also_fin = true;
+		}
+		//printf( "INIT SEND: %d\n", dosend );
+
+		memcpy( ip_payload, httpoutputtable + ofs, dosend );
+		reply_type_and_len = dosend;
 	}
 	else if ( flags & SFHIP_TCP_SOCKETS_FLAG_FIN  )
 	{
@@ -228,6 +307,9 @@ int tcp_override( sfhip * hip,
 			seqsub = 1; // one less sequence numbers is how TCP handles keepalive.
 			break;
 	}
+
+	if( also_fin )
+		rflags |= SFHIP_TCP_SOCKETS_FLAG_FIN;
 
 	rflags |= SFHIP_TCP_SOCKETS_FLAG_ACK;
 
