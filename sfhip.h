@@ -1353,13 +1353,20 @@ int sfhip_accept_packet( sfhip * hip, sfhip_phy_packet_mtu * data, int length )
 
 	#if SFHIP_CHECK_UDP_CHECKSUM || SFHIP_CHECK_TCP_CHECKSUM
 		// Setup the psudoheader.  We can use a common setup for UDP and TCP.
+		struct pseudo_header
+		{
+			uint32_t protolen;
+			uint32_t sourceaddy;
+			uint32_t destaddy;
+		} HIPPACK16 * pse = ip_payload - 12;
+
 		sfhip_address * pseudoheader = ip_payload - 12;
 		if ( hlen < 20 )
 		{
-			pseudoheader[1] = iph->source_address;
-			pseudoheader[2] = iph->destination_address;
+			pse->sourceaddy = iph->source_address;
+			pse->destaddy = iph->destination_address;
 		}
-		pseudoheader[0] = ( iph->protocol << 24 ) | HIPNTOHS( ip_payload_length );
+		pse->protolen = ( iph->protocol << 24 ) | HIPNTOHS( ip_payload_length );
 	#endif
 
 		switch ( protocol )
