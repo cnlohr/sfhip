@@ -25,7 +25,7 @@ Design Principles:
 
 The stack is all designed around operating with either immediate-replies to other packets, by re-writing RX frames to TX, as well as a `tick()` function for sending unsolicited packets.
 
-A basic connectionless TCP implementation takes about 46 bytes of RAM, plus one scratch buffer for TX/RX of whatever MTU size is used, plus about 4kB of text.  For stateful TCP, it takes about 40 bytes per connection.
+A basic connectionless TCP implementation takes about 46 bytes of RAM, plus one scratch buffer for TX/RX of whatever MTU size is used, plus about 4kB of flash.  For stateful TCP, it takes about 40 bytes per connection.
 
 ## Usage
 
