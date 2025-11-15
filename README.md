@@ -11,7 +11,8 @@ While still in early stages of development, but as it stands it has:
 4. UDP packet receiption, sending.  (And replying)
 5. TCP connections, and connectionless TCP mode.
 6. An example connectionless HTTP server (in ![rawtcp/](rawtcp))
-7. A basic example with stateful TCP and UDP replies in ![example/](example))
+   (Connectionless TCP tailors the TCP sequence IDs such that it can store state that is maintained by the packets in-flight and remote side instead of needing to store any state internally)
+8. A basic example with stateful TCP and UDP replies in ![example/](example))
 
 Design Principles:
 1. Everything should be two-byte-aligned (because MAC headers are 14 bytes instead of 16).
