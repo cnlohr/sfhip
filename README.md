@@ -11,6 +11,7 @@ While still in early stages of development, but as it stands it has:
 4. UDP packet receiption, sending.  (And replying)
 5. TCP connections, and connectionless TCP mode.
 6. An example socketless HTTP server (in ![rawtcp/](rawtcp)) where the TCP sequence IDs are tailed to store state, so packets in-flight maintain all necessary state, instead of sockets in RAM.
+7. Options for IP/UDP/TCP checksum offload or direct calculation.
 8. A basic example with stateful TCP and UDP replies in ![example/](example))
 
 Design Principles:
