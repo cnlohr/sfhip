@@ -7,7 +7,7 @@ test : rawtcp
 	./rawtcp tap1 -
 
 tablegen : tablegen.c
-	gcc -Og -g -o $@ $^
+	gcc -Og -g -o $@ $^  -lz
 
 httptable.h : tablegen
 	./tablegen > httptable.h

@@ -22,11 +22,11 @@
 #include "httptable.h"
 
 
-#define TAP_ADDR "192.168.14.252"
+#define TAP_ADDR "192.168.13.252"
 sfhip hip = {
-    .ip = HIPIP( 192, 168, 14, 251 ),
+    .ip = HIPIP( 192, 168, 13, 251 ),
     .mask = HIPIP( 255, 255, 255, 0 ),
-    .gateway = HIPIP( 192, 168, 14, 1 ),
+    .gateway = HIPIP( 192, 168, 13, 1 ),
     .self_mac = { 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55 },
 //    .hostname = "sfhip_test_linux",
 };
@@ -191,12 +191,14 @@ int tcp_override( sfhip * hip,
 		int pldidx = 0;
 		do
 		{
+			//printf( "CUR: %02x\n", cur-httpstatetable );
 			uint32_t fail = ((hipunalignedu32*)cur)->v;
 			//printf( "CFIRST (fail): %02x\n", fail);
 			cur += 4;
 
 			if( fail & 0x80000000 )
 			{
+				//printf( "EMIT: %08x\n", fail );
 				emit = fail & 0x7fffffff;
 				cur = httpstatetable + ((hipunalignedu32*)cur)->v;
 				continue;
@@ -209,9 +211,10 @@ int tcp_override( sfhip * hip,
 				//printf( "COMP: %d %02x\n", comp, cur - httpstatetable );
 				if( !comp || comp == 1 )
 				{
+					if( comp == 0 ) pldidx--;
+					else cur++; // because \x01 is followed by x00
 					cur = httpstatetable + ((hipunalignedu32*)cur)->v;
 					//printf( "! %d %d (%c %c) JUMP TO: %02x\n", c, comp, c, comp, cur -httpstatetable);
-					if( comp == 0 ) pldidx--;
 					break;
 				}
 				else if( c != comp )

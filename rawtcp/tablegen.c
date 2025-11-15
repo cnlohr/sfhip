@@ -5,6 +5,9 @@
 #include <sys/stat.h>
 #include <stdint.h>
 
+
+#include <zlib.h>
+
 #define MAX_SIZE (1024*1024*128)
 #define MAX_TOKENS 1024
 
@@ -13,6 +16,32 @@ int endpointer = 0;
 
 char ** fileList;
 int nrFiles;
+
+struct fileWithAlias
+{
+	char * fileName;
+	int originalFileId;
+};
+struct fileWithAlias * fileWithAlias;
+int nrFileWithAlias;
+
+int aliassort( struct fileWithAlias * a, struct fileWithAlias * b )
+{
+	return strcmp( a->fileName, b->fileName );
+}
+
+char * estrrstr( char * haystack, char * needle )
+{
+	// terrible implementation.
+	int lneedle = strlen( needle );
+	int lhaystack = strlen( haystack );
+	int i;
+	for( i = lhaystack - lneedle; i >= 0; i-- )
+	{
+		if( strncmp( haystack + i, needle, lneedle ) == 0 ) return haystack + i;
+	}
+	return 0;
+}
 
 void enumerate( const char * dirName )
 {
@@ -84,12 +113,14 @@ tabletoken * CommonRange( int start, int filestart, int fileend, tabletoken * fa
 		int matchingchar = -1;
 		for( i = filestart; i < fileend; i++ )
 		{
-			char c = fileList[i][cno];
+			char c = fileWithAlias[i].fileName[cno];
 			if( c == 0 && fileend - filestart == 1 )
 			{
+				// Getting to an endpoint on the word tree.
+
 				fprintf( stderr, "Inner fail %d %d %d\n", c, fileend, filestart );
 				tabletoken * pass = GenToken();
-				pass->emit_token = filestart + 1; // file ID
+				pass->emit_token = fileWithAlias[filestart].originalFileId + 1; // file ID
 				pass->pass = lineend;
 				pass->matching_string = "T";
 
@@ -97,7 +128,7 @@ tabletoken * CommonRange( int start, int filestart, int fileend, tabletoken * fa
 				ret->pass = pass;
 				ret->fail = failif;
 				ret->matching_string = malloc( cno - start + 2 );
-				memcpy( ret->matching_string, fileList[filestart] + start, cno-start );
+				memcpy( ret->matching_string, fileWithAlias[filestart].fileName + start, cno-start );
 				ret->matching_string[cno-start] = ' ';
 				ret->matching_string[cno-start+1] = 0;
 				fprintf( stderr, "FinalStr: \"%s\"\n", ret->matching_string );
@@ -109,6 +140,8 @@ tabletoken * CommonRange( int start, int filestart, int fileend, tabletoken * fa
 				matchingchar = c;
 			else if( matchingchar != c )
 			{
+				// the word tree splits.
+
 				fprintf( stderr, "Disagree %c %c (%d)  Splitting [%d %d %d]\n", matchingchar, c, i, filestart, i, fileend );
 				tabletoken * fail = CommonRange( cno, i, fileend, terminal );
 				tabletoken * pass = CommonRange( cno, filestart, i, fail ); 
@@ -117,7 +150,7 @@ tabletoken * CommonRange( int start, int filestart, int fileend, tabletoken * fa
 				ret->pass = pass;
 				ret->fail = failif;
 				ret->matching_string = malloc( cno - start + 1 );
-				memcpy( ret->matching_string, fileList[filestart] + start, cno-start );
+				memcpy( ret->matching_string, fileWithAlias[filestart].fileName + start, cno-start );
 				fprintf( stderr, "MATCHING_STR in non-match:\"%s\"\n", ret->matching_string );
 				ret->matching_string[cno-start] = 0;
 				return ret;
@@ -142,7 +175,9 @@ void PrintTree( tabletoken * search, int depth )
 		return;
 	}
 	if( search->emit_token >= 0 )
-		fprintf( stderr, "%*c%d (%02x) (%02x %02x)\n", depth+1, ' ', search->emit_token, search->stream_location, search->pass?search->pass->stream_location:0, search->fail?search->fail->stream_location:0 );
+	{
+		fprintf( stderr, "%*c#0%d (%02x) (%02x %02x)\n", depth+1, ' ', search->emit_token, search->stream_location, search->pass?search->pass->stream_location:0, search->fail?search->fail->stream_location:0 );
+	}
 	else
 	{
 		fprintf( stderr, "%*c%s (%02x) (%02x %02x)\n", depth+1, ' ', search->matching_string, search->stream_location, search->pass?search->pass->stream_location:0, search->fail?search->fail->stream_location:0 );
@@ -169,14 +204,34 @@ int main()
 	{
 		fileListOrig[i] = fileList[i];
 		fileList[i] += strlen(rootWeb); // Pull off "web"
+
+#if 1
+		char * rr = estrrstr( fileList[i], "index.htm" );
+		if( rr )
+		{
+			char * dup = strdup( fileList[i] );
+			char * rrprime = dup + (rr-fileList[i]);
+			*rrprime = 0;
+			fileWithAlias = realloc( fileWithAlias, sizeof( struct fileWithAlias ) * (nrFileWithAlias+1) );
+			fileWithAlias[nrFileWithAlias].originalFileId = i;
+			fileWithAlias[nrFileWithAlias].fileName = dup;
+			nrFileWithAlias++;
+		}
+#endif
+		fileWithAlias = realloc( fileWithAlias, sizeof( struct fileWithAlias ) * (nrFileWithAlias+1) );
+		fileWithAlias[nrFileWithAlias].originalFileId = i;
+		fileWithAlias[nrFileWithAlias].fileName = fileList[i];
+		nrFileWithAlias++;
 	}
+
+	qsort( fileWithAlias, nrFileWithAlias, sizeof(struct fileWithAlias), (__compar_fn_t)aliassort );
 
 	int maxLength = 0;
 
-	for( i = 0; i < nrFiles; i++ )
+	for( i = 0; i < nrFileWithAlias; i++ )
 	{
-		fprintf( stderr, "%s\n", fileList[i] );
-		int len = strlen( fileList[i] );
+		fprintf( stderr, "%s\n", fileWithAlias[i].fileName );
+		int len = strlen( fileWithAlias[i].fileName );
 		if( len > maxLength ) maxLength = len;
 	}
 
@@ -187,7 +242,7 @@ int main()
 	tabletoken * lineend_final = GenToken();
 	terminal = GenToken();
 
-	tabletoken * search = CommonRange( 0, 0, nrFiles, do404 );
+	tabletoken * search = CommonRange( 0, 0, nrFileWithAlias, do404 );
 
 	start->matching_string = "GET ";
 	start->pass = search;
@@ -243,7 +298,7 @@ int main()
 
 		uint8_t * ee = data_image + ep;
 
-			fprintf( stderr, "%d %d %p [%p %p %s]\n", i, e->emit_token, e->matching_string, e->pass, e, e->matching_string );
+			fprintf( stderr, "EMIT: %d %d %p [%p %p %s]\n", i, e->emit_token, e->matching_string, e->pass, e, e->matching_string );
 
 		if( e->emit_token < 0 )
 		{
@@ -307,41 +362,77 @@ int main()
 			struct stat st;
 			stat(fname, &st);
 
-			int len = st.st_size;
+			int inlen = st.st_size;
 
 			char header[960];
 
 			char * ext = strrchr( fname, '.' );
 			int nhdr = 0;
 			if( !ext )
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: application/octet-stream\r\n\r\n" );
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: application/octet-stream\r\nContent-Encoding: deflate\r\n\r\n" );
 			else if( strcmp( ext, ".png" ) == 0 )
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: image/png\r\n\r\n" );
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: image/png\r\nContent-Encoding: deflate\r\n\r\n" );
 			else if( strcmp( ext, ".gif" ) == 0 )
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: image/gif\r\n\r\n" );
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: image/gif\r\nContent-Encoding: deflate\r\n\r\n" );
 			else if( strcmp( ext, ".txt" ) == 0 )
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\n\r\n" );
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\nContent-Encoding: deflate\r\n\r\n" );
 			else if( strcmp( ext, ".htm" ) == 0 || strcmp( ext, ".html" ) == 0 )
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: text/html\r\n\r\n" );
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: text/html\r\nContent-Encoding: deflate\r\n\r\n" );
 			else
-				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: application/octet-stream\r\n\r\n" );
-
-			int lenplus = (len + nhdr) | 0x80000000;
+				nhdr = snprintf( header, sizeof(header), "HTTP/1.1 200 Ok\r\nContent-Type: application/octet-stream\r\nContent-Encoding: deflate\r\n\r\n" );
 
 			memcpy( data_image + endpointer, header, nhdr );
 			endpointer += nhdr;
+
+			uint8_t indata[inlen];
+
 			FILE * f = fopen( fname, "rb" );
-			int r = fread( data_image + endpointer, len, 1, f );
+			int r = fread( indata, inlen, 1, f );
 			fclose( f );
 			if( r != 1 )
 			{
 				fprintf( stderr, "error: could not open %s\n", fname );
+				exit( -1 );
 			}
-			endpointer += len;
 
-			// TODO: support multi-outputs
-			// TODO: support gzip.
+			
+			int ret, flush = 1;
+			int level = 9;
+			unsigned have;
+			z_stream strm;
 
+			/* allocate deflate state */
+			strm.zalloc = Z_NULL;
+			strm.zfree = Z_NULL;
+			strm.opaque = Z_NULL;
+			ret = deflateInit(&strm, level);
+			if (ret != Z_OK)
+				return ret;
+
+	        strm.avail_in = inlen;
+			strm.next_in = indata;
+
+			unsigned char out[inlen*20+128];
+            strm.avail_out = inlen*20+128;
+            strm.next_out = out;
+
+			fprintf( stderr, "IN: %d / Out: %d\n", strm.avail_in, strm.avail_out );
+
+			ret = deflate(&strm, flush);    /* no bad return value */
+
+			if(ret == Z_STREAM_ERROR)
+			{
+				fprintf( stderr, "error: can't compress chunk in file %s\n", fname );
+				exit( -1 );
+			}
+			have = sizeof(out) - strm.avail_out;
+
+			deflateEnd( &strm );
+			fprintf( stderr, "USED: %d\n", have );
+
+
+			memcpy( data_image + endpointer, out, have );
+			endpointer += have;
 		}
 
 		int flen = outFileLens[i] = endpointer - outFilePointers[i];
