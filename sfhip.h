@@ -274,6 +274,9 @@ typedef int sfhip_length_or_tcp_code;
 #define MAXIMUM_TCP_REPLY ( SFHIP_MTU - sizeof( sfhip_mac_header ) - sizeof( sfhip_ip_header ) - \
 	                        sizeof( sfhip_tcp_header ) )
 
+typedef struct HIPPACK { uint32_t v; } hipunalignedu32;
+typedef struct HIPPACK16 { uint32_t v; } hipunalignedu32a16;
+
 typedef struct HIPPACK16
 {
 	uint8_t mac[6];
@@ -657,7 +660,7 @@ int sfhip_dhcp_client_request( sfhip * hip, sfhip_phy_packet_mtu * scratch )
 
 	if ( !hip->need_to_discover && hip->ip )
 	{
-		typedef struct HIPPACK16
+		typedef struct HIPPACK
 		{
 			uint8_t req, len;
 			hipbe32 ip;
@@ -946,7 +949,7 @@ int sfhip_send_tcp_packet( sfhip * hip,
 	{
 		payload_length = 4;
 		optionadd = 4;
-		( (hipbe32 *)( tcp + 1 ) )[0] = HIPHTONL(
+		( (hipunalignedu32a16 *)( tcp + 1 ) )->v = HIPHTONL(
 		    0x02040000 |
 		    ( SFHIP_MTU - sizeof( sfhip_tcp_header ) - sizeof( sfhip_ip_header ) -
 		      sizeof( sfhip_phy_packet ) - 18 /* to just make it a smoler */ ) );
@@ -1021,7 +1024,7 @@ int sfhip_handle_tcp( sfhip * hip,
 		return -1;
 
 		#if SFHIP_CHECK_TCP_CHECKSUM || SFHIP_CHECK_UDP_CHECKSUM
-	sfhip_address sender = ( (sfhip_address *)ip_payload )[-2];
+	sfhip_address sender = ( (hipunalignedu32a16 *)ip_payload )[-2].v;
 		#else
 	sfhip_address sender = ( (sfhip_ip_header *)( data->payload ) )->source_address;
 		#endif
