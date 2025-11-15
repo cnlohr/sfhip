@@ -50,7 +50,7 @@ void linux_got_packet( uint8_t * buf, int length )
 
 int sfhip_send_packet( sfhip * hip, sfhip_phy_packet * data, int length )
 {
-	//	if ( ( rand() % 10 ) == 0 ) return 0;
+	//if ( ( rand() % 10 ) == 0 ) return 0;
 
 	return linux_send_packet( (uint8_t *)data, length );
 }
@@ -321,10 +321,16 @@ int tcp_override( sfhip * hip,
 	{
 		reply_type_and_len = 4;
 		optionadd = 4;
-		( (hipbe32 *)( tcp + 1 ) )[0] = HIPHTONL(
+		( (hipunalignedu32a16 *)( tcp + 1 ) )[0].v = HIPHTONL(
 		    0x02040000 |
 		    ( SFHIP_MTU - sizeof( sfhip_tcp_header ) - sizeof( sfhip_ip_header ) -
 		      sizeof( sfhip_phy_packet ) - 18 /* to just make it a smoler */ ) );
+
+		// Set User Time-Out option of 2 seconds
+		// this does not seem to help.
+		//reply_type_and_len += 4;
+		//optionadd += 4;
+		//( (hipunalignedu32a16 *)( tcp + 1 ) )[1].v = HIPHTONL( 0x1c040002 );
 	}
 
 	tcp->source_port = local_port;
