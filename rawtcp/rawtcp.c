@@ -191,14 +191,14 @@ int tcp_override( sfhip * hip,
 		int pldidx = 0;
 		do
 		{
-			uint32_t fail = *((uint32_t*)cur);
+			uint32_t fail = ((hipunalignedu32*)cur)->v;
 			//printf( "CFIRST (fail): %02x\n", fail);
 			cur += 4;
 
 			if( fail & 0x80000000 )
 			{
 				emit = fail & 0x7fffffff;
-				cur = httpstatetable + *((uint32_t*)cur);
+				cur = httpstatetable + ((hipunalignedu32*)cur)->v;
 				continue;
 			}
 
@@ -209,7 +209,7 @@ int tcp_override( sfhip * hip,
 				//printf( "COMP: %d %02x\n", comp, cur - httpstatetable );
 				if( !comp || comp == 1 )
 				{
-					cur = httpstatetable + *((uint32_t*)cur);
+					cur = httpstatetable + ((hipunalignedu32*)cur)->v;
 					//printf( "! %d %d (%c %c) JUMP TO: %02x\n", c, comp, c, comp, cur -httpstatetable);
 					if( comp == 0 ) pldidx--;
 					break;
