@@ -10,8 +10,7 @@ While still in early stages of development, but as it stands it has:
 3. DHCP client (optional)
 4. UDP packet receiption, sending.  (And replying)
 5. TCP connections, and connectionless TCP mode.
-6. An example connectionless HTTP server (in ![rawtcp/](rawtcp))
-   (Connectionless TCP tailors the TCP sequence IDs such that it can store state that is maintained by the packets in-flight and remote side instead of needing to store any state internally)
+6. An example socketless HTTP server (in ![rawtcp/](rawtcp)) where the TCP sequence IDs are tailed to store state, so packets in-flight maintain all necessary state, instead of sockets in RAM.
 8. A basic example with stateful TCP and UDP replies in ![example/](example))
 
 Design Principles:
